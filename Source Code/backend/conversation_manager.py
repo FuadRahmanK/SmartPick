@@ -1,6 +1,11 @@
 from decision_engine import DecisionEngine
 from input_parser import InputParser
-from ai_layer import generate_ai_response, generate_recommendation_text
+from ai_layer import (
+    normalize_user_input,
+    extract_structured_info_with_ai,
+    infer_rating_with_ai,
+    generate_recommendation_text
+)
 
 
 class ConversationManager:
@@ -9,10 +14,8 @@ class ConversationManager:
         self.parser = InputParser()
 
         self.state = {
-            "greeted": False,
             "budget": None,
             "os_preference": None,
-            "brand_preference": None,
             "weights": {
                 "camera": 3,
                 "battery": 3,
@@ -22,186 +25,159 @@ class ConversationManager:
                 "value": 3
             },
             "clarified_features": {},
-            "awaiting_feature": None,
-            "recommendation_shown": False,
-            "min_features_required": 3
+            "awaiting_field": None   # 🔥 unified state tracking
         }
 
-    # ----------------------------------------------------
-    # Main Entry
-    # ----------------------------------------------------
+    # --------------------------------------------------
+    # ENTRY
+    # --------------------------------------------------
     def handle_message(self, user_message):
-        self.update_state(user_message)
+
+        cleaned = normalize_user_input(user_message)
+
+        # 1️⃣ If waiting for specific field → process it
+        if self.state["awaiting_field"]:
+            self.process_waiting_field(cleaned)
+            return self.decide_next_step()
+
+        # 2️⃣ Otherwise extract structured info
+        self.extract_initial_information(cleaned)
+
         return self.decide_next_step()
 
-    # ----------------------------------------------------
-    # Update State
-    # ----------------------------------------------------
-    def update_state(self, user_message):
-        parsed = self.parser.parse(user_message)
+    # --------------------------------------------------
+    # Process Waiting Field
+    # --------------------------------------------------
+    def process_waiting_field(self, text):
 
-        if parsed["budget"]:
+        field = self.state["awaiting_field"]
+
+        if field == "os_preference":
+            text_lower = text.lower()
+
+            if "android" in text_lower:
+                self.state["os_preference"] = "Android"
+            elif "ios" in text_lower or "iphone" in text_lower:
+                self.state["os_preference"] = "iOS"
+            elif "any" in text_lower or "no preference" in text_lower:
+                self.state["os_preference"] = "Any"
+
+            self.state["awaiting_field"] = None
+            return
+
+        # Otherwise it is a feature
+        feature = field
+
+        ai_rating = infer_rating_with_ai(text, feature)
+        rating = ai_rating if ai_rating else self.fallback_rating(text)
+
+        if rating is None:
+            rating = 3
+
+        self.state["weights"][feature] = rating
+        self.state["clarified_features"][feature] = rating
+
+        self.state["awaiting_field"] = None
+
+    # --------------------------------------------------
+    # Extract Initial Structured Info
+    # --------------------------------------------------
+    def extract_initial_information(self, text):
+
+        ai_data = extract_structured_info_with_ai(text)
+
+        if ai_data:
+            if ai_data.get("budget"):
+                self.state["budget"] = ai_data["budget"]
+
+            if ai_data.get("os_preference"):
+                self.state["os_preference"] = ai_data["os_preference"]
+
+            if ai_data.get("feature_priority"):
+                feature = ai_data["feature_priority"]
+                self.state["weights"][feature] = 5
+                self.state["clarified_features"][feature] = 5
+
+        parsed = self.parser.parse(text)
+
+        if not self.state["budget"] and parsed["budget"]:
             self.state["budget"] = parsed["budget"]
 
-        if parsed["os_preference"]:
+        if self.state["os_preference"] is None and parsed["os_preference"]:
             self.state["os_preference"] = parsed["os_preference"]
 
-        if parsed["brand_preference"]:
-            self.state["brand_preference"] = parsed["brand_preference"]
+        if parsed["feature_detected"]:
+            feature = parsed["feature_detected"]
+            self.state["weights"][feature] = 5
+            self.state["clarified_features"][feature] = 5
 
-        # Handle behavioral clarification
-        if self.state["awaiting_feature"]:
-            inferred = self.infer_rating_from_behavior(user_message)
-
-            if inferred:
-                feature = self.state["awaiting_feature"]
-
-                # Feature interaction
-                if feature == "performance" and inferred >= 4:
-                    self.state["weights"]["battery"] += 1
-
-                if feature == "display" and inferred >= 4:
-                    self.state["weights"]["battery"] += 1
-
-                self.state["weights"][feature] = inferred
-                self.state["clarified_features"][feature] = inferred
-                self.state["awaiting_feature"] = None
-
-            else:
-                numeric = self.parser.extract_importance_rating(user_message)
-                if numeric:
-                    feature = self.state["awaiting_feature"]
-                    self.state["weights"][feature] = numeric
-                    self.state["clarified_features"][feature] = numeric
-                    self.state["awaiting_feature"] = None
-
-        # If already recommended and user changes something → reset
-        if self.state["recommendation_shown"]:
-            self.state["recommendation_shown"] = False
-
-    # ----------------------------------------------------
-    # Behavioral Inference
-    # ----------------------------------------------------
-    def infer_rating_from_behavior(self, text):
+    # --------------------------------------------------
+    # Fallback Rating
+    # --------------------------------------------------
+    def fallback_rating(self, text):
         text = text.lower()
 
-        high = ["daily", "regularly", "very often", "a lot", "heavy", "everyday", "frequently", "yes", "yeah", "yup"]
-        medium = ["sometimes", "occasionally", "moderate"]
-        low = ["rarely", "not much", "almost never", "no"]
-
-        if any(w in text for w in high):
+        if "very important" in text:
             return 5
-
-        if any(w in text for w in medium):
+        if "important" in text:
+            return 4
+        if any(w in text for w in ["moderate", "sometimes", "occasionally"]):
             return 3
-
-        if any(w in text for w in low):
+        if "rarely" in text:
+            return 2
+        if any(w in text for w in ["no", "not important"]):
             return 1
 
         return None
 
-    # ----------------------------------------------------
-    # Ask Feature
-    # ----------------------------------------------------
-    def ask_feature(self, feature_key):
-
-        behavioral_questions = {
-            "performance": "Do you play heavy games regularly, occasionally, or rarely?",
-            "battery": "Do you use your phone heavily throughout the day?",
-            "camera": "Do you take a lot of photos and videos?",
-            "display": "Do you watch movies or YouTube frequently on your phone?",
-            "software": "Do you care about clean software and long-term updates?"
-        }
-
-        self.state["awaiting_feature"] = feature_key
-        base_question = behavioral_questions.get(feature_key)
-
-        question = generate_ai_response(
-            f"""
-Rewrite the following question naturally and professionally.
-Do NOT add greetings.
-Do NOT repeat.
-Keep it concise.
-
-Question:
-{base_question}
-"""
-        )
-
-        return {
-            "type": "question",
-            "message": question
-        }
-
-    # ----------------------------------------------------
-    # Generate Summary
-    # ----------------------------------------------------
-    def generate_summary(self):
-        summary = f"""
-Budget: ₹{self.state['budget']}
-OS Preference: {self.state['os_preference']}
-"""
-
-        for feature, rating in self.state["clarified_features"].items():
-            summary += f"{feature.capitalize()}: {rating}/5\n"
-
-        if self.state["brand_preference"]:
-            summary += f"Brand Preference: {self.state['brand_preference']}\n"
-
-        return generate_ai_response(
-            f"""
-Summarize the following clearly and professionally.
-Do NOT add greetings.
-
-{summary}
-"""
-        )
-
-    # ----------------------------------------------------
+    # --------------------------------------------------
     # Decision Flow
-    # ----------------------------------------------------
+    # --------------------------------------------------
     def decide_next_step(self):
 
         if not self.state["budget"]:
-            return {
-                "type": "question",
-                "message": "What is your budget range?"
-            }
+            self.state["awaiting_field"] = "budget"
+            return {"type": "question", "message": "What is your budget range?"}
 
-        if not self.state["os_preference"]:
-            return {
-                "type": "question",
-                "message": "Do you prefer Android or iOS?"
-            }
+        if self.state["os_preference"] is None:
+            self.state["awaiting_field"] = "os_preference"
+            return {"type": "question", "message": "Do you prefer Android or iOS?"}
 
-        # OS-aware feature order
-        if self.state["os_preference"] == "iOS":
-            feature_order = ["camera", "performance", "battery", "display"]
-        else:
-            feature_order = ["performance", "camera", "battery", "display", "software"]
+        feature_order = ["performance", "camera", "battery", "display", "software"]
 
         for feature in feature_order:
             if feature not in self.state["clarified_features"]:
-                return self.ask_feature(feature)
+                self.state["awaiting_field"] = feature
+                return {
+                    "type": "question",
+                    "message": f"How important is {feature} for you?"
+                }
 
-        # Recommendation
         recommendations = self.engine.recommend(
             budget=self.state["budget"],
             weights=self.state["weights"],
             os_preference=self.state["os_preference"]
         )
 
-        explanation = generate_recommendation_text(
-            recommendations,
-            self.state
-        )
-
-        self.state["recommendation_shown"] = True
-
         return {
             "type": "recommendation",
             "summary": self.generate_summary(),
             "data": recommendations,
-            "ai_text": explanation,
-            "follow_up": "Would you like to adjust anything? You can modify budget, OS, or preferences."
+            "ai_text": generate_recommendation_text(recommendations, self.state),
+            "follow_up": "Would you like to adjust anything?"
         }
+
+    # --------------------------------------------------
+    # Summary
+    # --------------------------------------------------
+    def generate_summary(self):
+
+        lines = [
+            f"Budget: ₹{self.state['budget']}",
+            f"OS Preference: {self.state['os_preference']}"
+        ]
+
+        for f, r in self.state["clarified_features"].items():
+            lines.append(f"{f.capitalize()}: {r}/5")
+
+        return "Here is a summary of your preferences:\n\n" + "\n".join(lines)
