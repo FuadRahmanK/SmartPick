@@ -10,7 +10,7 @@ class DecisionEngine:
         total = sum(weights.values())
         return {k: v / total for k, v in weights.items()} if total else weights
 
-    def calculate_effective_performance(self, phone):
+    def effective_performance(self, phone):
         return 0.7 * phone["performance_score"] + 0.3 * phone["processor_score"]
 
     def recommend(self, budget, weights, os_preference=None):
@@ -23,25 +23,27 @@ class DecisionEngine:
                 if p["os_type"].lower() == os_preference.lower()
             ]
 
+        if not filtered:
+            return []
+
         amplified = {k: v ** 2 for k, v in weights.items()}
         normalized = self.normalize_weights(amplified)
 
         scored = []
 
         for phone in filtered:
-            effective_perf = self.calculate_effective_performance(phone)
 
             score = (
                 normalized["camera"] * phone["camera_score"] +
                 normalized["battery"] * phone["battery_score"] +
-                normalized["performance"] * effective_perf +
+                normalized["performance"] * self.effective_performance(phone) +
                 normalized["display"] * phone["display_score"] +
                 normalized["software"] * phone["software_score"] +
                 normalized["value"] * phone["value_score"]
             )
 
-            phone_copy = phone.copy()
-            phone_copy["final_score"] = round(score, 2)
-            scored.append(phone_copy)
+            p = phone.copy()
+            p["final_score"] = round(score, 2)
+            scored.append(p)
 
         return sorted(scored, key=lambda x: x["final_score"], reverse=True)[:3]

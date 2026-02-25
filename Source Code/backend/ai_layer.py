@@ -5,9 +5,7 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "mistral"
 
 
-# ----------------------------------------------------
-# Safe Ollama Call
-# ----------------------------------------------------
+# ---------------- SAFE OLLAMA CALL ----------------
 def call_ollama(prompt):
     try:
         response = requests.post(
@@ -26,14 +24,12 @@ def call_ollama(prompt):
     return None
 
 
-# ----------------------------------------------------
-# Normalize User Input
-# ----------------------------------------------------
+# ---------------- NORMALIZE INPUT ----------------
 def normalize_user_input(text):
     prompt = f"""
-Correct spelling mistakes and rewrite clearly.
+Correct spelling mistakes only.
 Do NOT change meaning.
-Return only the corrected sentence.
+Return only corrected sentence.
 
 Text:
 {text}
@@ -42,23 +38,18 @@ Text:
     return ai_output if ai_output else text
 
 
-# ----------------------------------------------------
-# AI Structured Extraction
-# ----------------------------------------------------
+# ---------------- AI STRUCTURED EXTRACTION ----------------
 def extract_structured_info_with_ai(user_text):
 
     prompt = f"""
-Extract structured information from the user's message.
-
-Return ONLY valid JSON in this format:
+Extract structured info and return ONLY JSON:
 
 {{
-  "budget": number or null,
   "os_preference": "Android", "iOS", "Any", or null,
   "feature_priority": "camera", "battery", "performance", "display", "software", or null
 }}
 
-User Message:
+User:
 {user_text}
 """
 
@@ -70,63 +61,53 @@ User Message:
     try:
         start = ai_output.find("{")
         end = ai_output.rfind("}") + 1
-        json_text = ai_output[start:end]
-        return json.loads(json_text)
+        return json.loads(ai_output[start:end])
     except:
         return None
 
 
-# ----------------------------------------------------
-# AI Behavioral Rating
-# ----------------------------------------------------
+# ---------------- AI RATING ----------------
 def infer_rating_with_ai(user_text, feature_name):
 
     prompt = f"""
-A user answered a question about their {feature_name} usage.
-
+User answered about importance of {feature_name}.
 Return ONLY a number from 1 to 5.
 
-1 = Very Low Importance
-5 = Very High Importance
-
-User Response:
+Text:
 {user_text}
 """
 
     ai_output = call_ollama(prompt)
 
     if ai_output:
-        for char in ai_output:
-            if char in ["1", "2", "3", "4", "5"]:
-                return int(char)
+        for ch in ai_output:
+            if ch in ["1", "2", "3", "4", "5"]:
+                return int(ch)
 
     return None
 
 
-# ----------------------------------------------------
-# Recommendation Explanation
-# ----------------------------------------------------
+# ---------------- EXPLANATION ----------------
 def generate_recommendation_text(recommendations, state):
 
     if not recommendations:
         return "No suitable phones found within your criteria."
 
-    top_phone = recommendations[0]
+    top = recommendations[0]
 
     base = f"""
-The {top_phone['name']} is the best match for your preferences.
-It fits your budget and aligns strongly with your priorities.
-Overall score: {top_phone['final_score']}.
+The {top['name']} is the best match for your needs.
+It aligns strongly with your priorities and budget.
+Final score: {top['final_score']}.
 """
 
     prompt = f"""
-Explain professionally why this phone is best.
+Explain briefly why this phone is best.
 
-Phone: {top_phone['name']}
-Score: {top_phone['final_score']}
-User Preferences: {state}
+Phone: {top['name']}
+Score: {top['final_score']}
+Preferences: {state}
 """
 
     ai_output = call_ollama(prompt)
-
     return ai_output if ai_output else base.strip()
