@@ -18,7 +18,7 @@ def get_manager():
     session_id = session["session_id"]
 
     if session_id not in managers:
-        managers[session_id] = ConversationManager()
+        managers[session_id] = ConversationManager("phones.json")
 
     return managers[session_id]
 
@@ -30,12 +30,20 @@ def serve():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json.get("message")
-
+    user_message = request.json.get("message", "")
     manager = get_manager()
     response = manager.handle_message(user_message)
-
     return jsonify(response)
+
+
+@app.route("/reset", methods=["POST"])
+def reset():
+    session_id = session.get("session_id")
+
+    if session_id and session_id in managers:
+        managers[session_id] = ConversationManager("phones.json")
+
+    return jsonify({"status": "reset"})
 
 
 @app.route("/<path:path>")

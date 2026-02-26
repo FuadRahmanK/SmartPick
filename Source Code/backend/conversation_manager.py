@@ -9,9 +9,13 @@ from ai_layer import (
 
 
 class ConversationManager:
+
     def __init__(self, dataset_path="phones.json"):
+
         self.engine = DecisionEngine(dataset_path)
         self.parser = InputParser()
+
+        self.default_weight = 3
 
         self.state = {
             "budget": None,
@@ -25,95 +29,95 @@ class ConversationManager:
                 "value": 3
             },
             "clarified_features": {},
-            "awaiting_field": None   # 🔥 unified state tracking
+            "awaiting_field": None
         }
 
-    # --------------------------------------------------
+        self.last_update = None  # 🔥 track only last change
+
+    # ==================================================
     # ENTRY
-    # --------------------------------------------------
+    # ==================================================
     def handle_message(self, user_message):
 
-        cleaned = normalize_user_input(user_message)
+        text = normalize_user_input(user_message)
 
-        # 1️⃣ If waiting for specific field → process it
+        self.last_update = None  # reset each turn
+
         if self.state["awaiting_field"]:
-            self.process_waiting_field(cleaned)
+            self.process_waiting_field(text)
             return self.decide_next_step()
 
-        # 2️⃣ Otherwise extract structured info
-        self.extract_initial_information(cleaned)
-
-        return self.decide_next_step()
-
-    # --------------------------------------------------
-    # Process Waiting Field
-    # --------------------------------------------------
-    def process_waiting_field(self, text):
-
-        field = self.state["awaiting_field"]
-
-        if field == "os_preference":
-            text_lower = text.lower()
-
-            if "android" in text_lower:
-                self.state["os_preference"] = "Android"
-            elif "ios" in text_lower or "iphone" in text_lower:
-                self.state["os_preference"] = "iOS"
-            elif "any" in text_lower or "no preference" in text_lower:
-                self.state["os_preference"] = "Any"
-
-            self.state["awaiting_field"] = None
-            return
-
-        # Otherwise it is a feature
-        feature = field
-
-        ai_rating = infer_rating_with_ai(text, feature)
-        rating = ai_rating if ai_rating else self.fallback_rating(text)
-
-        if rating is None:
-            rating = 3
-
-        self.state["weights"][feature] = rating
-        self.state["clarified_features"][feature] = rating
-
-        self.state["awaiting_field"] = None
-
-    # --------------------------------------------------
-    # Extract Initial Structured Info
-    # --------------------------------------------------
-    def extract_initial_information(self, text):
-
-        ai_data = extract_structured_info_with_ai(text)
-
-        if ai_data:
-            if ai_data.get("budget"):
-                self.state["budget"] = ai_data["budget"]
-
-            if ai_data.get("os_preference"):
-                self.state["os_preference"] = ai_data["os_preference"]
-
-            if ai_data.get("feature_priority"):
-                feature = ai_data["feature_priority"]
-                self.state["weights"][feature] = 5
-                self.state["clarified_features"][feature] = 5
-
+        # Deterministic extraction first
         parsed = self.parser.parse(text)
 
-        if not self.state["budget"] and parsed["budget"]:
+        if parsed["budget"]:
             self.state["budget"] = parsed["budget"]
+            self.last_update = "budget"
 
-        if self.state["os_preference"] is None and parsed["os_preference"]:
+        if parsed["os_preference"]:
             self.state["os_preference"] = parsed["os_preference"]
+            self.last_update = "os_preference"
 
         if parsed["feature_detected"]:
             feature = parsed["feature_detected"]
             self.state["weights"][feature] = 5
             self.state["clarified_features"][feature] = 5
+            self.last_update = feature
 
-    # --------------------------------------------------
-    # Fallback Rating
-    # --------------------------------------------------
+        # AI enhancement second
+        ai_data = extract_structured_info_with_ai(text)
+
+        if ai_data:
+            if ai_data.get("os_preference"):
+                self.state["os_preference"] = ai_data["os_preference"]
+                self.last_update = "os_preference"
+
+            if ai_data.get("feature_priority"):
+                feature = ai_data["feature_priority"]
+                self.state["weights"][feature] = 5
+                self.state["clarified_features"][feature] = 5
+                self.last_update = feature
+
+        return self.decide_next_step()
+
+    # ==================================================
+    # PROCESS WAITING FIELD
+    # ==================================================
+    def process_waiting_field(self, text):
+
+        field = self.state["awaiting_field"]
+
+        if field == "budget":
+            parsed = self.parser.parse(text)
+            if parsed["budget"]:
+                self.state["budget"] = parsed["budget"]
+                self.last_update = "budget"
+            self.state["awaiting_field"] = None
+            return
+
+        if field == "os_preference":
+            parsed = self.parser.parse(text)
+            if parsed["os_preference"]:
+                self.state["os_preference"] = parsed["os_preference"]
+                self.last_update = "os_preference"
+            self.state["awaiting_field"] = None
+            return
+
+        # Feature rating
+        ai_rating = infer_rating_with_ai(text, field)
+        rating = ai_rating if ai_rating else self.fallback_rating(text)
+
+        if rating is None:
+            rating = self.default_weight
+
+        self.state["weights"][field] = rating
+        self.state["clarified_features"][field] = rating
+        self.last_update = field
+        self.state["awaiting_field"] = None
+
+    # ==================================================
+    # FALLBACK RATING
+    # ==================================================
     def fallback_rating(self, text):
         text = text.lower()
 
@@ -121,36 +125,71 @@ class ConversationManager:
             return 5
         if "important" in text:
             return 4
-        if any(w in text for w in ["moderate", "sometimes", "occasionally"]):
+        if "moderate" in text:
             return 3
         if "rarely" in text:
             return 2
-        if any(w in text for w in ["no", "not important"]):
+        if "not important" in text:
             return 1
 
         return None
 
-    # --------------------------------------------------
-    # Decision Flow
-    # --------------------------------------------------
+    # ==================================================
+    # ACKNOWLEDGE LAST UPDATE ONLY
+    # ==================================================
+    def acknowledge_last(self):
+
+        if not self.last_update:
+            return ""
+
+        if self.last_update == "budget":
+            return "Budget noted. "
+
+        if self.last_update == "os_preference":
+            if self.state["os_preference"] == "Any":
+                return "No OS restriction applied. "
+            return f"{self.state['os_preference']} preference recorded. "
+
+        return f"{self.last_update.capitalize()} priority updated. "
+
+    # ==================================================
+    # DECISION FLOW
+    # ==================================================
     def decide_next_step(self):
+
+        ack = self.acknowledge_last()
 
         if not self.state["budget"]:
             self.state["awaiting_field"] = "budget"
-            return {"type": "question", "message": "What is your budget range?"}
+            return {
+                "type": "question",
+                "message": f"{ack}What is your budget range?"
+            }
 
         if self.state["os_preference"] is None:
             self.state["awaiting_field"] = "os_preference"
-            return {"type": "question", "message": "Do you prefer Android or iOS?"}
+            return {
+                "type": "question",
+                "message": f"{ack}Do you prefer Android or iOS?"
+            }
 
-        feature_order = ["performance", "camera", "battery", "display", "software"]
+        feature_questions = {
+            "performance": "Do you engage in heavy gaming or editing regularly?",
+            "camera": "Do you frequently take photos or record videos?",
+            "battery": "Do you rely on your phone for extended daily usage?",
+            "display": "Is high-quality display important for media consumption?",
+            "software": "Do you value clean software and long-term updates?"
+        }
 
-        for feature in feature_order:
-            if feature not in self.state["clarified_features"]:
+        for feature in feature_questions:
+            if (
+                feature not in self.state["clarified_features"]
+                and self.state["weights"][feature] == self.default_weight
+            ):
                 self.state["awaiting_field"] = feature
                 return {
                     "type": "question",
-                    "message": f"How important is {feature} for you?"
+                    "message": f"{ack}{feature_questions[feature]}"
                 }
 
         recommendations = self.engine.recommend(
@@ -163,13 +202,13 @@ class ConversationManager:
             "type": "recommendation",
             "summary": self.generate_summary(),
             "data": recommendations,
-            "ai_text": generate_recommendation_text(recommendations, self.state),
-            "follow_up": "Would you like to adjust anything?"
+            "ai_text": f"{ack}Based on this evaluation, here are the top-ranked options:",
+            "follow_up": "Would you like to refine any specific criteria?"
         }
 
-    # --------------------------------------------------
-    # Summary
-    # --------------------------------------------------
+    # ==================================================
+    # SUMMARY
+    # ==================================================
     def generate_summary(self):
 
         lines = [
@@ -177,7 +216,7 @@ class ConversationManager:
             f"OS Preference: {self.state['os_preference']}"
         ]
 
-        for f, r in self.state["clarified_features"].items():
+        for f, r in self.state["weights"].items():
             lines.append(f"{f.capitalize()}: {r}/5")
 
-        return "Here is a summary of your preferences:\n\n" + "\n".join(lines)
+        return "Summary of your requirements:\n\n" + "\n".join(lines)
