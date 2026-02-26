@@ -2,16 +2,20 @@ import React, { useState, useRef, useEffect } from "react";
 import "./styles.css";
 
 function App() {
-  const [messages, setMessages] = useState([
-    { sender: "bot", text: "Hi! I'm SmartPick. What kind of phone are you looking for?" }
-  ]);
+
+  const initialGreeting = {
+    sender: "bot",
+    text: "Hi! I'm SmartPick. What kind of phone are you looking for?"
+  };
+
+  const [messages, setMessages] = useState([initialGreeting]);
   const [recommendations, setRecommendations] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const messagesEndRef = useRef(null);
 
-  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, recommendations]);
@@ -39,20 +43,10 @@ function App() {
       }
 
       if (data.type === "recommendation") {
-
-        if (data.summary) {
-          setMessages(prev => [...prev, { sender: "bot", text: data.summary }]);
-        }
-
         if (data.ai_text) {
           setMessages(prev => [...prev, { sender: "bot", text: data.ai_text }]);
         }
-
         setRecommendations(data.data || []);
-
-        if (data.follow_up) {
-          setMessages(prev => [...prev, { sender: "bot", text: data.follow_up }]);
-        }
       }
 
     } catch (error) {
@@ -62,47 +56,113 @@ function App() {
     setLoading(false);
   };
 
+  const startNewConversation = async () => {
+    setIsClearing(true);
+
+    try {
+      await fetch("/reset", { method: "POST" });
+    } catch (error) {
+      console.error("Reset failed");
+    }
+
+    setTimeout(() => {
+      setMessages([initialGreeting]);
+      setRecommendations([]);
+      setInput("");
+      setIsClearing(false);
+    }, 300);
+  };
+
   return (
-    <div className="app">
-      <div className="chat-area">
+    <div className={`app ${isClearing ? "fade-out" : "fade-in"}`}>
 
-        <div className="messages">
-          {messages.map((msg, index) => (
-            <div key={index} className={`message ${msg.sender}`}>
-              {msg.text}
-            </div>
-          ))}
+      <div className="messages">
 
-          {recommendations.length > 0 && (
-            <div className="recommendations">
-              {recommendations.map((phone, index) => (
-                <div key={index} className="card">
-                  <strong>#{index + 1} {phone.name}</strong>
-                  <div>Price: ₹{phone.price}</div>
-                  <div>Processor: {phone.processor_name}</div>
-                  <div>Score: {phone.final_score}</div>
+        {messages.map((msg, index) => (
+          <div key={index} className={`message ${msg.sender} fade-message`}>
+            {msg.text}
+          </div>
+        ))}
+
+        {recommendations.length > 0 && (
+          <div className="recommendations">
+            {recommendations.map((phone, index) => (
+              <div
+                key={index}
+                className="card fade-card"
+                style={{ animationDelay: `${index * 0.15}s` }}
+              >
+
+                {index === 0 && (
+                  <div className="top-badge">Top Pick</div>
+                )}
+
+                <img
+                  src={phone.image_url}
+                  alt={phone.name}
+                  className="phone-image"
+                />
+
+                <div className="card-content">
+                  <h3>#{index + 1} {phone.name}</h3>
+                  <p className="price">₹{phone.price}</p>
+                  <p>Processor: {phone.processor_name}</p>
+                  <p>Score: {phone.final_score}</p>
+
+                  <div className="score-bar">
+                    <div
+                      className="score-fill"
+                      style={{ width: `${phone.final_score * 10}%` }}
+                    ></div>
+                  </div>
+
+                  {phone.buy_url && (
+                    <a
+                      href={phone.buy_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="buy-btn"
+                    >
+                      Buy Now
+                    </a>
+                  )}
+
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
 
-          {loading && <div className="message bot">Thinking...</div>}
+            <button
+              className="new-chat-btn"
+              onClick={startNewConversation}
+            >
+              Start New Conversation
+            </button>
 
-          <div ref={messagesEndRef} />
-        </div>
+          </div>
+        )}
 
-        <div className="input-area">
-          <input
-            type="text"
-            value={input}
-            placeholder="Type your requirement..."
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          />
-          <button onClick={sendMessage}>Send</button>
-        </div>
+        {loading && (
+          <div className="message bot typing">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        )}
 
+        <div ref={messagesEndRef} />
       </div>
+
+      <div className="input-area">
+        <input
+          type="text"
+          value={input}
+          placeholder="Type your requirement..."
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+        />
+        <button onClick={sendMessage}>Send</button>
+      </div>
+
     </div>
   );
 }
