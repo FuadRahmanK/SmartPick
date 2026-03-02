@@ -7,9 +7,7 @@ app = Flask(__name__, static_folder="../frontend/build", static_url_path="/")
 app.secret_key = "smartpick_secret_key"
 CORS(app)
 
-# Store conversation managers per session
 managers = {}
-
 
 def get_manager():
     if "session_id" not in session:
@@ -39,10 +37,8 @@ def chat():
 @app.route("/reset", methods=["POST"])
 def reset():
     session_id = session.get("session_id")
-
     if session_id and session_id in managers:
         managers[session_id] = ConversationManager("phones.json")
-
     return jsonify({"status": "reset"})
 
 

@@ -3,7 +3,6 @@ import re
 
 class InputParser:
 
-    # ----------- BULLETPROOF BUDGET -----------
     def extract_budget(self, text):
         text = text.lower().replace(",", "")
 
@@ -26,10 +25,8 @@ class InputParser:
 
         if "any" in text or "no preference" in text:
             return "Any"
-
         if "android" in text:
             return "Android"
-
         if "iphone" in text or "ios" in text:
             return "iOS"
 
@@ -42,7 +39,7 @@ class InputParser:
             return "camera"
         if "battery" in text:
             return "battery"
-        if "gaming" in text or "performance" in text or "editing" in text:
+        if "gaming" in text or "performance" in text:
             return "performance"
         if "display" in text or "screen" in text:
             return "display"
