@@ -3,6 +3,12 @@ import "./styles.css";
 
 function App() {
 
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    document.body.className = darkMode ? "dark" : "light";
+  }, [darkMode]);
+
   const initialGreeting = {
     sender: "bot",
     text: "Hi! I'm SmartPick. What kind of phone are you looking for?"
@@ -43,13 +49,10 @@ function App() {
       }
 
       if (data.type === "recommendation") {
-        if (data.ai_text) {
-          setMessages(prev => [...prev, { sender: "bot", text: data.ai_text }]);
-        }
         setRecommendations(data.data || []);
       }
 
-    } catch (error) {
+    } catch {
       setMessages(prev => [...prev, { sender: "bot", text: "Something went wrong." }]);
     }
 
@@ -58,12 +61,7 @@ function App() {
 
   const startNewConversation = async () => {
     setIsClearing(true);
-
-    try {
-      await fetch("/reset", { method: "POST" });
-    } catch (error) {
-      console.error("Reset failed");
-    }
+    await fetch("/reset", { method: "POST" });
 
     setTimeout(() => {
       setMessages([initialGreeting]);
@@ -76,6 +74,23 @@ function App() {
   return (
     <div className={`app ${isClearing ? "fade-out" : "fade-in"}`}>
 
+      {/* ===== HEADER ===== */}
+      <div className="header">
+        <div className="logo">SmartPick</div>
+        <div className="toggle-container">
+          <span>{darkMode ? "🌙" : "☀️"}</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={darkMode}
+              onChange={() => setDarkMode(!darkMode)}
+            />
+            <span className="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      {/* ===== CHAT AREA ===== */}
       <div className="messages">
 
         {messages.map((msg, index) => (
@@ -87,11 +102,7 @@ function App() {
         {recommendations.length > 0 && (
           <div className="recommendations">
             {recommendations.map((phone, index) => (
-              <div
-                key={index}
-                className="card fade-card"
-                style={{ animationDelay: `${index * 0.15}s` }}
-              >
+              <div key={index} className="card fade-card">
 
                 {index === 0 && (
                   <div className="top-badge">Top Pick</div>
@@ -107,27 +118,31 @@ function App() {
                   <h3>#{index + 1} {phone.name}</h3>
                   <p className="price">₹{phone.price}</p>
                   <p>Processor: {phone.processor_name}</p>
-                  <p>Score: {phone.final_score}</p>
 
-                  <div className="score-bar">
-                    <div
-                      className="score-fill"
-                      style={{ width: `${phone.final_score * 10}%` }}
-                    ></div>
+                  <div className="score-wrapper">
+                    <div className="score-text">
+                      {phone.final_score}
+                    </div>
+                    <div className="score-bar">
+                      <div
+                        className="score-fill"
+                        style={{ width: `${phone.final_score * 10}%` }}
+                      ></div>
+                    </div>
                   </div>
-
-                  {phone.buy_url && (
-                    <a
-                      href={phone.buy_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="buy-btn"
-                    >
-                      Buy Now
-                    </a>
-                  )}
-
                 </div>
+
+                {phone.buy_url && (
+                  <a
+                    href={phone.buy_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="buy-btn"
+                  >
+                    Buy Now
+                  </a>
+                )}
+
               </div>
             ))}
 
@@ -137,7 +152,6 @@ function App() {
             >
               Start New Conversation
             </button>
-
           </div>
         )}
 
