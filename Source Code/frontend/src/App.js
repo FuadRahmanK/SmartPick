@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import "./styles.css";
 
+const API_URL = process.env.REACT_APP_API_URL;
+
 function App() {
 
   const [darkMode, setDarkMode] = useState(false);
+  const [sessionId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     document.body.className = darkMode ? "dark" : "light";
@@ -27,19 +30,35 @@ function App() {
   }, [messages, recommendations]);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
 
-    const userMessage = { sender: "user", text: input };
+    if (!input.trim() || loading) return;
+
+    const userInput = input;
+    const userMessage = { sender: "user", text: userInput };
+
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setLoading(true);
 
     try {
-      const response = await fetch("/chat", {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 40000);
+
+      const response = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input })
+        body: JSON.stringify({
+          message: userInput,
+          session_id: sessionId
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error("Server error");
+      }
 
       const data = await response.json();
 
@@ -52,8 +71,12 @@ function App() {
         setRecommendations(data.data || []);
       }
 
-    } catch {
-      setMessages(prev => [...prev, { sender: "bot", text: "Something went wrong." }]);
+    } catch (error) {
+      console.error("Error:", error);
+      setMessages(prev => [
+        ...prev,
+        { sender: "bot", text: "Server is waking up or something went wrong. Please try again." }
+      ]);
     }
 
     setLoading(false);
@@ -61,7 +84,16 @@ function App() {
 
   const startNewConversation = async () => {
     setIsClearing(true);
-    await fetch("/reset", { method: "POST" });
+
+    try {
+      await fetch(`${API_URL}/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+    } catch (error) {
+      console.error("Reset error:", error);
+    }
 
     setTimeout(() => {
       setMessages([initialGreeting]);
@@ -74,7 +106,6 @@ function App() {
   return (
     <div className={`app ${isClearing ? "fade-out" : "fade-in"}`}>
 
-      {/* ===== HEADER ===== */}
       <div className="header">
         <div className="logo">SmartPick</div>
         <div className="toggle-container">
@@ -90,11 +121,10 @@ function App() {
         </div>
       </div>
 
-      {/* ===== CHAT AREA ===== */}
       <div className="messages">
 
         {messages.map((msg, index) => (
-          <div key={index} className={`message ${msg.sender} fade-message`}>
+          <div key={index} className={`message ${msg.sender}`}>
             {msg.text}
           </div>
         ))}
@@ -102,7 +132,7 @@ function App() {
         {recommendations.length > 0 && (
           <div className="recommendations">
             {recommendations.map((phone, index) => (
-              <div key={index} className="card fade-card">
+              <div key={index} className="card">
 
                 {index === 0 && (
                   <div className="top-badge">Top Pick</div>
@@ -174,7 +204,9 @@ function App() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button onClick={sendMessage} disabled={loading}>
+          {loading ? "..." : "Send"}
+        </button>
       </div>
 
     </div>

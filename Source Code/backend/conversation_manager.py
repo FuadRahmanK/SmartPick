@@ -10,10 +10,8 @@ from ai_layer import (
 class ConversationManager:
 
     def __init__(self, dataset_path="phones.json"):
-
         self.engine = DecisionEngine(dataset_path)
         self.parser = InputParser()
-
         self.default_weight = 1
 
         self.state = {
@@ -47,7 +45,6 @@ class ConversationManager:
 
         parsed = self.parser.parse(text)
 
-        # Deterministic first
         if parsed["budget"]:
             self.state["budget"] = parsed["budget"]
             self.last_update = "budget"
@@ -62,7 +59,7 @@ class ConversationManager:
             self.state["clarified_features"][feature] = 5
             self.last_update = feature
 
-        # AI only if rule parser failed
+        # AI fallback only if deterministic failed
         if not parsed["budget"] and not parsed["os_preference"] and not parsed["feature_detected"]:
             ai_data = extract_structured_info_with_ai(text)
         else:
@@ -82,29 +79,26 @@ class ConversationManager:
         return self.decide_next_step()
 
     # ==============================
-    # PROCESS WAITING FIELD
+    # WAITING FIELD
     # ==============================
     def process_waiting_field(self, text):
 
         field = self.state["awaiting_field"]
 
-        if field == "budget":
+        if field in ["budget", "os_preference"]:
             parsed = self.parser.parse(text)
-            if parsed["budget"]:
+
+            if field == "budget" and parsed["budget"]:
                 self.state["budget"] = parsed["budget"]
                 self.last_update = "budget"
-            self.state["awaiting_field"] = None
-            return
 
-        if field == "os_preference":
-            parsed = self.parser.parse(text)
-            if parsed["os_preference"]:
+            if field == "os_preference" and parsed["os_preference"]:
                 self.state["os_preference"] = parsed["os_preference"]
                 self.last_update = "os_preference"
+
             self.state["awaiting_field"] = None
             return
 
-        # Feature rating
         rating = self.fallback_rating(text)
 
         if rating is None:
@@ -120,7 +114,6 @@ class ConversationManager:
 
     def fallback_rating(self, text):
         text = text.lower()
-
         if "very important" in text:
             return 5
         if "important" in text:
@@ -131,7 +124,6 @@ class ConversationManager:
             return 2
         if "not important" in text:
             return 1
-
         return None
 
     def acknowledge_last(self):
@@ -149,7 +141,7 @@ class ConversationManager:
         return f"{self.last_update.capitalize()} priority updated. "
 
     # ==============================
-    # SMART FLOW
+    # FLOW
     # ==============================
     def decide_next_step(self):
 
@@ -163,11 +155,16 @@ class ConversationManager:
             self.state["awaiting_field"] = "os_preference"
             return {"type": "question", "message": f"{ack}Do you prefer Android or iOS?"}
 
-        # Dynamic feature ordering
         filtered = self.engine.get_filtered_phones(
             self.state["budget"],
             self.state["os_preference"]
         )
+
+        if not filtered:
+            return {
+                "type": "question",
+                "message": "No phones found in this budget. Would you like to increase it?"
+            }
 
         variance_map = self.engine.feature_variance(filtered)
 

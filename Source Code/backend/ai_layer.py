@@ -1,30 +1,32 @@
-import requests
 import json
+import os
+from groq import Groq
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "mistral"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY environment variable is not set.")
+
+client = Groq(api_key=GROQ_API_KEY)
+
+MODEL_NAME = "mixtral-8x7b-32768"
 
 
-# ---------------- SAFE OLLAMA CALL ----------------
-def call_ollama(prompt):
+def call_groq(prompt, temperature=0.3):
     try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL_NAME,
-                "prompt": prompt,
-                "stream": False
-            },
-            timeout=2
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You are a precise assistant. Follow instructions strictly."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=temperature
         )
-        if response.status_code == 200:
-            return response.json().get("response", "").strip()
-    except:
-        pass
-    return None
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return None
 
 
-# ---------------- NORMALIZE INPUT ----------------
 def normalize_user_input(text):
     prompt = f"""
 Correct spelling mistakes only.
@@ -34,13 +36,11 @@ Return only corrected sentence.
 Text:
 {text}
 """
-    ai_output = call_ollama(prompt)
+    ai_output = call_groq(prompt, temperature=0)
     return ai_output if ai_output else text
 
 
-# ---------------- AI STRUCTURED EXTRACTION ----------------
 def extract_structured_info_with_ai(user_text):
-
     prompt = f"""
 Extract structured info and return ONLY JSON:
 
@@ -52,8 +52,7 @@ Extract structured info and return ONLY JSON:
 User:
 {user_text}
 """
-
-    ai_output = call_ollama(prompt)
+    ai_output = call_groq(prompt)
 
     if not ai_output:
         return None
@@ -62,13 +61,11 @@ User:
         start = ai_output.find("{")
         end = ai_output.rfind("}") + 1
         return json.loads(ai_output[start:end])
-    except:
+    except Exception:
         return None
 
 
-# ---------------- AI RATING ----------------
 def infer_rating_with_ai(user_text, feature_name):
-
     prompt = f"""
 User answered about importance of {feature_name}.
 Return ONLY a number from 1 to 5.
@@ -76,8 +73,7 @@ Return ONLY a number from 1 to 5.
 Text:
 {user_text}
 """
-
-    ai_output = call_ollama(prompt)
+    ai_output = call_groq(prompt, temperature=0)
 
     if ai_output:
         for ch in ai_output:
@@ -85,29 +81,3 @@ Text:
                 return int(ch)
 
     return None
-
-
-# ---------------- EXPLANATION ----------------
-def generate_recommendation_text(recommendations, state):
-
-    if not recommendations:
-        return "No suitable phones found within your criteria."
-
-    top = recommendations[0]
-
-    base = f"""
-The {top['name']} is the best match for your needs.
-It aligns strongly with your priorities and budget.
-Final score: {top['final_score']}.
-"""
-
-    prompt = f"""
-Explain briefly why this phone is best.
-
-Phone: {top['name']}
-Score: {top['final_score']}
-Preferences: {state}
-"""
-
-    ai_output = call_ollama(prompt)
-    return ai_output if ai_output else base.strip()
