@@ -1,51 +1,65 @@
-from flask import Flask, request, jsonify, send_from_directory, session
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-import uuid
 from conversation_manager import ConversationManager
+import os
+import time
 
-app = Flask(__name__, static_folder="../frontend/build", static_url_path="/")
-app.secret_key = "smartpick_secret_key"
+app = Flask(__name__)
 CORS(app)
 
+# ===============================
+# SESSION STORE WITH AUTO CLEANUP
+# ===============================
 managers = {}
+SESSION_TIMEOUT = 1800  # 30 minutes
 
-def get_manager():
-    if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4())
 
-    session_id = session["session_id"]
+def get_manager(session_id):
+    now = time.time()
+
+    # Remove expired sessions
+    expired = [
+        sid for sid, data in managers.items()
+        if now - data["last_used"] > SESSION_TIMEOUT
+    ]
+    for sid in expired:
+        del managers[sid]
 
     if session_id not in managers:
-        managers[session_id] = ConversationManager("phones.json")
+        managers[session_id] = {
+            "manager": ConversationManager("phones.json"),
+            "last_used": now
+        }
 
-    return managers[session_id]
-
-
-@app.route("/")
-def serve():
-    return send_from_directory(app.static_folder, "index.html")
+    managers[session_id]["last_used"] = now
+    return managers[session_id]["manager"]
 
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json.get("message", "")
-    manager = get_manager()
+    data = request.json
+    user_message = data.get("message", "")
+    session_id = data.get("session_id")
+
+    if not session_id:
+        return jsonify({"error": "Missing session_id"}), 400
+
+    manager = get_manager(session_id)
     response = manager.handle_message(user_message)
     return jsonify(response)
 
 
 @app.route("/reset", methods=["POST"])
 def reset():
-    session_id = session.get("session_id")
-    if session_id and session_id in managers:
-        managers[session_id] = ConversationManager("phones.json")
+    data = request.json
+    session_id = data.get("session_id")
+
+    if session_id in managers:
+        del managers[session_id]
+
     return jsonify({"status": "reset"})
 
 
-@app.route("/<path:path>")
-def static_proxy(path):
-    return send_from_directory(app.static_folder, path)
-
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
