@@ -139,7 +139,7 @@ class ConversationManager:
 
         if not self.state["budget"]:
             self.state["awaiting_field"] = "budget"
-            return {"type": "question", "message": f"{ack}What is your budget range?"}
+            return {"type": "question", "message": f"{ack}What is your budget limit?"}
 
         if self.state["os_preference"] is None:
             self.state["awaiting_field"] = "os_preference"
@@ -159,7 +159,7 @@ class ConversationManager:
         variance_map = self.engine.feature_variance(filtered)
 
         feature_questions = {
-            "performance": "How important is performance or gaming power?",
+            "performance": "How important is performance and gaming power?",
             "camera": "How important is camera quality?",
             "battery": "How important is battery life?",
             "display": "How important is display quality?",
@@ -200,5 +200,6 @@ class ConversationManager:
         ]
         for f, r in self.state["weights"].items():
             lines.append(f"{f.capitalize()}: {r}/5")
+
 
         return "Summary:\n\n" + "\n".join(lines)
