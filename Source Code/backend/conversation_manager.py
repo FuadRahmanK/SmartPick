@@ -31,9 +31,6 @@ class ConversationManager:
 
         self.last_update = None
 
-    # ==============================
-    # ENTRY
-    # ==============================
     def handle_message(self, user_message):
 
         text = normalize_user_input(user_message)
@@ -59,7 +56,6 @@ class ConversationManager:
             self.state["clarified_features"][feature] = 5
             self.last_update = feature
 
-        # AI fallback only if deterministic failed
         if not parsed["budget"] and not parsed["os_preference"] and not parsed["feature_detected"]:
             ai_data = extract_structured_info_with_ai(text)
         else:
@@ -78,9 +74,6 @@ class ConversationManager:
 
         return self.decide_next_step()
 
-    # ==============================
-    # WAITING FIELD
-    # ==============================
     def process_waiting_field(self, text):
 
         field = self.state["awaiting_field"]
@@ -140,9 +133,6 @@ class ConversationManager:
 
         return f"{self.last_update.capitalize()} priority updated. "
 
-    # ==============================
-    # FLOW
-    # ==============================
     def decide_next_step(self):
 
         ack = self.acknowledge_last()

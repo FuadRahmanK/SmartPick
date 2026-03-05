@@ -7,17 +7,13 @@ import time
 app = Flask(__name__)
 CORS(app)
 
-# ===============================
-# SESSION STORE WITH AUTO CLEANUP
-# ===============================
 managers = {}
-SESSION_TIMEOUT = 1800  # 30 minutes
+SESSION_TIMEOUT = 1800 
 
 
 def get_manager(session_id):
     now = time.time()
 
-    # Remove expired sessions
     expired = [
         sid for sid, data in managers.items()
         if now - data["last_used"] > SESSION_TIMEOUT

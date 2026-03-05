@@ -69,7 +69,6 @@ class DecisionEngine:
             p["final_score"] = round(score, 3)
             scored.append(p)
 
-        # Deterministic multi-level sorting
         return sorted(
             scored,
             key=lambda x: (

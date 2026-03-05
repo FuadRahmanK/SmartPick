@@ -14,7 +14,7 @@ function App() {
 
   const initialGreeting = {
     sender: "bot",
-    text: "Hi! I'm SmartPick, your smartphone decision assistant."
+    text: "Hi! I'm SmartPick. What kind of phone are you looking for?"
   };
 
   const [messages, setMessages] = useState([initialGreeting]);
